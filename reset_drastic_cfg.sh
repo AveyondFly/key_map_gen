@@ -13,10 +13,6 @@ if [ -f /storage/.config/drastic/config/drastic.cf2 ]; then
     rm -rf /storage/.config/drastic/config/drastic.cf*
 fi
 
-if [ -f /storage/.config/drastic_chn/config/drastic.cf2 ]; then
-    rm -rf /storage/.config/drastic_chn/config/drastic.cf*
-fi
-
 cp "${DRASTIC_TEMPLATE}" "${DRASTIC_CFG}"
 
 guid=$("$JOYGUID_BIN" 2>/dev/null | tr -d '\n')  # 移除换行符
@@ -34,6 +30,17 @@ tmp_file=$(mktemp)
 
 awk -v mapping_str="$mapping_line" '
 BEGIN {
+    # Hat 方向掩码到值的映射 (Drastic 使用 0x440 起始)
+    hat_values["1"] = 1088  # up
+    hat_values["2"] = 1091  # right
+    hat_values["4"] = 1089  # down
+    hat_values["8"] = 1090  # left
+
+    # 初始化标志
+    has_left_stick = 0
+    has_right_stick = 0
+    has_guide = 0
+
     # 初始化键值映射
     split(mapping_str, parts, /,/)
     delete key_map
@@ -41,32 +48,76 @@ BEGIN {
         if (parts[i] ~ /:/) {
             split(parts[i], kv, /:/)
             key = kv[1]
-            # 提取数字部分（去掉b前缀）
-            if (kv[2] ~ /^b/) {
-                value = substr(kv[2], 2)
-                key_map[key] = value + 0  # 转换为数字
+            val = kv[2]
+
+            # 检测是否有左摇杆
+            if (key == "leftx" || key == "lefty") {
+                has_left_stick = 1
+            }
+
+            # 检测是否有右摇杆
+            if (key == "rightx" || key == "righty") {
+                has_right_stick = 1
+            }
+
+            # 检测是否有 guide 键
+            if (key == "guide") {
+                has_guide = 1
+            }
+
+            if (val ~ /^b[0-9]+$/) {
+                # 按钮: b0 -> 1024 + n
+                key_map[key] = substr(val, 2) + 1024
+            } else if (val ~ /^a[0-9]+\+$/) {
+                # 轴正向: a2+ -> 1216 + n (0x4C0 起始)
+                gsub(/^a|\+$/, "", val)
+                key_map[key] = 1216 + val
+            } else if (val ~ /^a[0-9]+-$/) {
+                # 轴负向: a2- -> 1152 + n (0x480 起始)
+                gsub(/^a|-$/, "", val)
+                key_map[key] = 1152 + val
+            } else if (val ~ /^h[0-9]+\.[0-9]+$/) {
+                # Hat 方向: h0.1 -> 1088 (0x440 起始)
+                gsub(/^h[0-9]+\./, "", val)
+                if (val in hat_values) {
+                    key_map[key] = hat_values[val]
+                }
             }
         }
     }
 
-    # 定义控件映射关系（保持不变）
+    # 定义控件映射关系
+    # 方向键
     control_mapping["CONTROL_INDEX_UP"] = "dpup"
     control_mapping["CONTROL_INDEX_DOWN"] = "dpdown"
     control_mapping["CONTROL_INDEX_LEFT"] = "dpleft"
     control_mapping["CONTROL_INDEX_RIGHT"] = "dpright"
+
+    # 游戏按键
     control_mapping["CONTROL_INDEX_A"] = "a"
     control_mapping["CONTROL_INDEX_B"] = "b"
     control_mapping["CONTROL_INDEX_X"] = "x"
     control_mapping["CONTROL_INDEX_Y"] = "y"
     control_mapping["CONTROL_INDEX_L"] = "leftshoulder"
     control_mapping["CONTROL_INDEX_R"] = "rightshoulder"
+
+    # 系统按键
     control_mapping["CONTROL_INDEX_START"] = "start"
     control_mapping["CONTROL_INDEX_SELECT"] = "back"
-    control_mapping["CONTROL_INDEX_TOUCH_CURSOR_PRESS"] = "rightstick"
+
+    # 特殊功能 - 默认映射（双摇杆手柄）
     control_mapping["CONTROL_INDEX_MENU"] = "leftstick"
     control_mapping["CONTROL_INDEX_SWAP_SCREENS"] = "guide"
     control_mapping["CONTROL_INDEX_SWAP_ORIENTATION_A"] = "lefttrigger"
-    control_mapping["CONTROL_INDEX_SWAP_ORIENTATION_B"] = "righttrigger"
+
+    # 触屏控制 - 默认使用右摇杆
+    control_mapping["CONTROL_INDEX_TOUCH_CURSOR_PRESS"] = "rightstick"
+    control_mapping["CONTROL_INDEX_TOUCH_CURSOR_UP"] = "righty-"
+    control_mapping["CONTROL_INDEX_TOUCH_CURSOR_DOWN"] = "righty+"
+    control_mapping["CONTROL_INDEX_TOUCH_CURSOR_LEFT"] = "rightx-"
+    control_mapping["CONTROL_INDEX_TOUCH_CURSOR_RIGHT"] = "rightx+"
+
+    # UI 导航
     control_mapping["CONTROL_INDEX_UI_UP"] = "dpup"
     control_mapping["CONTROL_INDEX_UI_DOWN"] = "dpdown"
     control_mapping["CONTROL_INDEX_UI_LEFT"] = "dpleft"
@@ -84,14 +135,107 @@ BEGIN {
             split(arr1[2], arr2, "]")
             control_index = arr2[1]
             
-            if (control_index in control_mapping) {
-                physical_key = control_mapping[control_index]
-                
-                if (physical_key in key_map) {
-                    new_value = key_map[physical_key] + 1024
+            # 单摇杆特殊处理：左摇杆作为触屏光标（需要有左摇杆）
+            if (has_right_stick == 0 && has_left_stick == 1) {
+                if (control_index == "CONTROL_INDEX_TOUCH_CURSOR_PRESS") {
+                    # L3 作为 cursor press
+                    if ("leftstick" in key_map) {
+                        new_value = key_map["leftstick"]
+                        split(current_line, arr3, "=")
+                        if (length(arr3) >= 2) {
+                            current_line = arr3[1] "= " new_value
+                        }
+                    }
+                } else if (control_index == "CONTROL_INDEX_TOUCH_CURSOR_UP") {
+                    # 左摇杆上
                     split(current_line, arr3, "=")
                     if (length(arr3) >= 2) {
-                        current_line = arr3[1] "= " new_value
+                        current_line = arr3[1] "= 1153"
+                    }
+                } else if (control_index == "CONTROL_INDEX_TOUCH_CURSOR_DOWN") {
+                    # 左摇杆下
+                    split(current_line, arr3, "=")
+                    if (length(arr3) >= 2) {
+                        current_line = arr3[1] "= 1217"
+                    }
+                } else if (control_index == "CONTROL_INDEX_TOUCH_CURSOR_LEFT") {
+                    # 左摇杆左
+                    split(current_line, arr3, "=")
+                    if (length(arr3) >= 2) {
+                        current_line = arr3[1] "= 1152"
+                    }
+                } else if (control_index == "CONTROL_INDEX_TOUCH_CURSOR_RIGHT") {
+                    # 左摇杆右
+                    split(current_line, arr3, "=")
+                    if (length(arr3) >= 2) {
+                        current_line = arr3[1] "= 1216"
+                    }
+                } else if (control_index in control_mapping) {
+                    # 其他控件使用默认映射
+                    physical_key = control_mapping[control_index]
+                    if (physical_key in key_map) {
+                        new_value = key_map[physical_key]
+                        split(current_line, arr3, "=")
+                        if (length(arr3) >= 2) {
+                            current_line = arr3[1] "= " new_value
+                        }
+                    }
+                }
+            } else {
+                # 双摇杆手柄：使用默认映射
+                if (control_index in control_mapping) {
+                    physical_key = control_mapping[control_index]
+                    if (physical_key in key_map) {
+                        new_value = key_map[physical_key]
+                        split(current_line, arr3, "=")
+                        if (length(arr3) >= 2) {
+                            current_line = arr3[1] "= " new_value
+                        }
+                    }
+                }
+            }
+        }
+    }
+    # controls_a 处理
+    else if (index(current_line, "controls_a[") == 1) {
+        split(current_line, arr1, "[")
+        if (length(arr1) >= 2) {
+            split(arr1[2], arr2, "]")
+            control_index = arr2[1]
+            
+            # MENU: 如果有 guide 键，设置 controls_a 的 MENU
+            if (control_index == "CONTROL_INDEX_MENU" && has_guide == 1) {
+                new_value = key_map["guide"]
+                split(current_line, arr3, "=")
+                if (length(arr3) >= 2) {
+                    current_line = arr3[1] "= " new_value
+                }
+            }
+            # 方向控件: 只有存在双摇杆时才设置（controls_a用左摇杆做方向）
+            else if (has_right_stick == 1 && has_left_stick == 1) {
+                if (control_index == "CONTROL_INDEX_UP" || control_index == "CONTROL_INDEX_UI_UP") {
+                    # 上: lefty- (轴1负向) = 1153
+                    split(current_line, arr3, "=")
+                    if (length(arr3) >= 2) {
+                        current_line = arr3[1] "= 1153"
+                    }
+                } else if (control_index == "CONTROL_INDEX_DOWN" || control_index == "CONTROL_INDEX_UI_DOWN") {
+                    # 下: lefty+ (轴1正向) = 1217
+                    split(current_line, arr3, "=")
+                    if (length(arr3) >= 2) {
+                        current_line = arr3[1] "= 1217"
+                    }
+                } else if (control_index == "CONTROL_INDEX_LEFT" || control_index == "CONTROL_INDEX_UI_LEFT") {
+                    # 左: leftx- (轴0负向) = 1152
+                    split(current_line, arr3, "=")
+                    if (length(arr3) >= 2) {
+                        current_line = arr3[1] "= 1152"
+                    }
+                } else if (control_index == "CONTROL_INDEX_RIGHT" || control_index == "CONTROL_INDEX_UI_RIGHT") {
+                    # 右: leftx+ (轴0正向) = 1216
+                    split(current_line, arr3, "=")
+                    if (length(arr3) >= 2) {
+                        current_line = arr3[1] "= 1216"
                     }
                 }
             }
