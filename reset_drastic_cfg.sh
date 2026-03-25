@@ -69,13 +69,24 @@ BEGIN {
                 # 按钮: b0 -> 1024 + n
                 key_map[key] = substr(val, 2) + 1024
             } else if (val ~ /^a[0-9]+\+$/) {
-                # 轴正向: a2+ -> 1216 + n (0x4C0 起始)
+                # 轴正向: 0x480 + axis = 1152 + axis
                 gsub(/^a|\+$/, "", val)
-                key_map[key] = 1216 + val
-            } else if (val ~ /^a[0-9]+-$/) {
-                # 轴负向: a2- -> 1152 + n (0x480 起始)
-                gsub(/^a|-$/, "", val)
                 key_map[key] = 1152 + val
+                key_map[key "+"] = 1152 + val
+            } else if (val ~ /^a[0-9]+-$/) {
+                # 轴负向: 0x4C0 + axis = 1216 + axis
+                gsub(/^a|-$/, "", val)
+                key_map[key] = 1216 + val
+                key_map[key "-"] = 1216 + val
+            } else if (val ~ /^a[0-9]+$/) {
+                # 轴（不带+/-后缀）: 直接存储正向和负向的最终值
+                gsub(/^a/, "", val)
+                # 标记此轴存在
+                key_map[key] = "axis"
+                # 正向最终值: 1152 + axis
+                key_map[key "+"] = 1152 + val
+                # 负向最终值: 1216 + axis
+                key_map[key "-"] = 1216 + val
             } else if (val ~ /^h[0-9]+\.[0-9]+$/) {
                 # Hat 方向: h0.1 -> 1088 (0x440 起始)
                 gsub(/^h[0-9]+\./, "", val)
@@ -148,28 +159,36 @@ BEGIN {
                         }
                     }
                 } else if (control_index == "CONTROL_INDEX_TOUCH_CURSOR_UP") {
-                    # 左摇杆上
-                    split(current_line, arr3, "=")
-                    if (length(arr3) >= 2) {
-                        current_line = arr3[1] "= 1153"
+                    # 左摇杆上 (Y轴负向): key_map["lefty-"] 已是最终值
+                    if ("lefty-" in key_map) {
+                        split(current_line, arr3, "=")
+                        if (length(arr3) >= 2) {
+                            current_line = arr3[1] "= " key_map["lefty-"]
+                        }
                     }
                 } else if (control_index == "CONTROL_INDEX_TOUCH_CURSOR_DOWN") {
-                    # 左摇杆下
-                    split(current_line, arr3, "=")
-                    if (length(arr3) >= 2) {
-                        current_line = arr3[1] "= 1217"
+                    # 左摇杆下 (Y轴正向): key_map["lefty+"] 已是最终值
+                    if ("lefty+" in key_map) {
+                        split(current_line, arr3, "=")
+                        if (length(arr3) >= 2) {
+                            current_line = arr3[1] "= " key_map["lefty+"]
+                        }
                     }
                 } else if (control_index == "CONTROL_INDEX_TOUCH_CURSOR_LEFT") {
-                    # 左摇杆左
-                    split(current_line, arr3, "=")
-                    if (length(arr3) >= 2) {
-                        current_line = arr3[1] "= 1152"
+                    # 左摇杆左 (X轴负向): key_map["leftx-"] 已是最终值
+                    if ("leftx-" in key_map) {
+                        split(current_line, arr3, "=")
+                        if (length(arr3) >= 2) {
+                            current_line = arr3[1] "= " key_map["leftx-"]
+                        }
                     }
                 } else if (control_index == "CONTROL_INDEX_TOUCH_CURSOR_RIGHT") {
-                    # 左摇杆右
-                    split(current_line, arr3, "=")
-                    if (length(arr3) >= 2) {
-                        current_line = arr3[1] "= 1216"
+                    # 左摇杆右 (X轴正向): key_map["leftx+"] 已是最终值
+                    if ("leftx+" in key_map) {
+                        split(current_line, arr3, "=")
+                        if (length(arr3) >= 2) {
+                            current_line = arr3[1] "= " key_map["leftx+"]
+                        }
                     }
                 } else if (control_index in control_mapping) {
                     # 其他控件使用默认映射
@@ -215,28 +234,36 @@ BEGIN {
             # 方向控件: 只有存在双摇杆时才设置（controls_a用左摇杆做方向）
             else if (has_right_stick == 1 && has_left_stick == 1) {
                 if (control_index == "CONTROL_INDEX_UP" || control_index == "CONTROL_INDEX_UI_UP") {
-                    # 上: lefty- (轴1负向) = 1153
-                    split(current_line, arr3, "=")
-                    if (length(arr3) >= 2) {
-                        current_line = arr3[1] "= 1153"
+                    # 上: lefty- (Y轴负向): 已是最终值
+                    if ("lefty-" in key_map) {
+                        split(current_line, arr3, "=")
+                        if (length(arr3) >= 2) {
+                            current_line = arr3[1] "= " key_map["lefty-"]
+                        }
                     }
                 } else if (control_index == "CONTROL_INDEX_DOWN" || control_index == "CONTROL_INDEX_UI_DOWN") {
-                    # 下: lefty+ (轴1正向) = 1217
-                    split(current_line, arr3, "=")
-                    if (length(arr3) >= 2) {
-                        current_line = arr3[1] "= 1217"
+                    # 下: lefty+ (Y轴正向): 已是最终值
+                    if ("lefty+" in key_map) {
+                        split(current_line, arr3, "=")
+                        if (length(arr3) >= 2) {
+                            current_line = arr3[1] "= " key_map["lefty+"]
+                        }
                     }
                 } else if (control_index == "CONTROL_INDEX_LEFT" || control_index == "CONTROL_INDEX_UI_LEFT") {
-                    # 左: leftx- (轴0负向) = 1152
-                    split(current_line, arr3, "=")
-                    if (length(arr3) >= 2) {
-                        current_line = arr3[1] "= 1152"
+                    # 左: leftx- (X轴负向): 已是最终值
+                    if ("leftx-" in key_map) {
+                        split(current_line, arr3, "=")
+                        if (length(arr3) >= 2) {
+                            current_line = arr3[1] "= " key_map["leftx-"]
+                        }
                     }
                 } else if (control_index == "CONTROL_INDEX_RIGHT" || control_index == "CONTROL_INDEX_UI_RIGHT") {
-                    # 右: leftx+ (轴0正向) = 1216
-                    split(current_line, arr3, "=")
-                    if (length(arr3) >= 2) {
-                        current_line = arr3[1] "= 1216"
+                    # 右: leftx+ (X轴正向): 已是最终值
+                    if ("leftx+" in key_map) {
+                        split(current_line, arr3, "=")
+                        if (length(arr3) >= 2) {
+                            current_line = arr3[1] "= " key_map["leftx+"]
+                        }
                     }
                 }
             }
