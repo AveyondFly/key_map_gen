@@ -2,8 +2,8 @@
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)  # 脚本绝对路径
 SDL_DB_FILE="/storage/.config/SDL-GameControllerDB/gamecontrollerdb.txt" # 目标DB文件
-JOYGUID_BIN="${SCRIPT_DIR}/update_controller/joyguid"     # joyguid路径
-DRASTIC_TEMPLATE="${SCRIPT_DIR}/update_controller/drastic.cfg"       # drastic.cfg模板
+JOYGUID_BIN="/usr/bin/joyguid"     # joyguid路径
+DRASTIC_TEMPLATE="/usr/config/drastic/config//drastic.cfg"       # drastic.cfg模板
 DRASTIC_CFG="/storage/.config/drastic/config/drastic.cfg"
 
 # 定义配置文件路径
@@ -30,11 +30,11 @@ tmp_file=$(mktemp)
 
 awk -v mapping_str="$mapping_line" '
 BEGIN {
-    # Hat 方向掩码到值的映射 (Drastic 使用 0x440 起始)
-    hat_values["1"] = 1088  # up
-    hat_values["2"] = 1091  # right
-    hat_values["4"] = 1089  # down
-    hat_values["8"] = 1090  # left
+    # Hat 方向掩码到值的映射 (Drastic 使用 0x440 | mask)
+    hat_values["1"] = 1089  # up:    0x440 | 1 = 0x441
+    hat_values["2"] = 1090  # right: 0x440 | 2 = 0x442
+    hat_values["4"] = 1092  # down:  0x440 | 4 = 0x444
+    hat_values["8"] = 1096  # left:  0x440 | 8 = 0x448
 
     # 初始化标志
     has_left_stick = 0
@@ -109,6 +109,7 @@ BEGIN {
     control_mapping["CONTROL_INDEX_MENU"] = "leftstick"
     control_mapping["CONTROL_INDEX_SWAP_SCREENS"] = "guide"
     control_mapping["CONTROL_INDEX_SWAP_ORIENTATION_A"] = "lefttrigger"
+    control_mapping["CONTROL_INDEX_SWAP_ORIENTATION_B"] = "righttrigger"
 
     # 触屏控制 - 默认使用右摇杆
     control_mapping["CONTROL_INDEX_TOUCH_CURSOR_PRESS"] = "rightstick"
